@@ -5,7 +5,7 @@ import pandas as pd
 st.set_page_config(page_title="NSE AI Dashboard", layout="wide")
 st.title("📈 NSE AI - My Permanent Dashboard")
 
-stocks = ["TCS.NS","RELIANCE.NS","INFY.NS","SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","ITC.NS"]
+stocks = ["TCS.NS","RELIANCE.NS","INFY.NS","SBIN.NS","HDFCBANK.NS","ICICIBANK.NS","ITC.NS","ADANIGREEN.NS","NIFTY.NS","BANKNIFTY.NS"]
 stock = st.sidebar.selectbox("Select Stock", stocks)
 
 data = yf.download(stock, period="6mo", auto_adjust=True, progress=False)
