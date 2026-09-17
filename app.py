@@ -1,107 +1,139 @@
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import plotly.graph_objects as go
 import numpy as np
 import math
+import streamlit.components.v1 as components
 
-st.set_page_config(page_title="NSE + GAINZALGO V2 ALFA", layout="wide")
-st.title("📈 NSE Dashboard + GAINZALGO V2 ALFA (AI)")
+st.set_page_config(page_title="Zerodha Style Chart", layout="wide")
+st.title("📊 Zerodha / TradingView Style Chart - NSE")
 
-stocks = ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","ICICIBANK.NS","TATAMOTORS.NS","ITC.NS"]
-stock = st.sidebar.selectbox("Select Stock", stocks)
-custom = st.sidebar.text_input("Or Type (e.g. BHARTIARTL.NS)")
+# --- SIDEBAR SETTINGS (Like TradingView right click -> Settings) ---
+st.sidebar.header("⚙️ Chart Settings")
+stock = st.sidebar.selectbox("Stock", ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","TATAMOTORS.NS","ICICIBANK.NS","ITC.NS","BHARTIARTL.NS","LT.NS"])
+custom = st.sidebar.text_input("Or Type Stock")
 if custom: stock = custom.upper()
 
-# --- GAINZALGO V2 ALFA CORE ENGINE ---
-def f_pdf(x, m, v):
-    # Gaussian PDF - same as TradingView version
-    v = max(v, 0.0001)
-    return (1 / math.sqrt(2 * math.pi * v)) * math.exp(-((x - m)**2) / (2 * v))
+timeframe = st.sidebar.selectbox("Time Variation", ["1m","5m","15m","30m","1h","1d","1wk"], index=5)
+period_map = {"1m":"2d","5m":"5d","15m":"1mo","30m":"1mo","1h":"3mo","1d":"1y","1wk":"2y"}
+interval_map = {"1m":"1m","5m":"5m","15m":"15m","30m":"30m","1h":"60m","1d":"1d","1wk":"1wk"}
 
-def gainzalgo_v2_alfa(df, len_lookback=100):
-    # Feature 1: Price Force (Close - Open) / ATR
-    # Feature 2: Volume Intensity (Volume / SMA Volume)
-    df = df.copy()
-    df['vol_sma'] = df['Volume'].rolling(20).mean()
-    df['feat1'] = (df['Close'] - df['Open']) / (df['High'] - df['Low'] + 0.001) # Price Force
-    df['feat2'] = df['Volume'] / (df['vol_sma'] + 1) # Volume Intensity
-    df['is_green'] = (df['Close'] > df['Open']).astype(int)
+show_ema = st.sidebar.checkbox("Show EMA 20/50/200", True)
+show_supertrend = st.sidebar.checkbox("Show Supertrend", True)
+show_rsi = st.sidebar.checkbox("Show RSI Panel", True)
+show_gainz = st.sidebar.checkbox("Show GAINZALGO V2 BUY/SELL", True)
 
-    probs = []
+# --- GAINZALGO ENGINE (from before) ---
+def f_pdf(x,m,v):
+    v=max(v,0.0001)
+    return (1 / math.sqrt(2*math.pi*v)) * math.exp(-((x-m)**2)/(2*v))
+
+def gainzalgo(df):
+    df=df.copy()
+    df['vol_sma']=df['Volume'].rolling(20).mean()
+    df['f1']=(df['Close']-df['Open'])/(df['High']-df['Low']+0.001)
+    df['f2']=df['Volume']/(df['vol_sma']+1)
+    df['is_green']=(df['Close']>df['Open']).astype(int)
+    probs=[]
     for i in range(len(df)):
-        if i < len_lookback:
-            probs.append(0.5)
-            continue
-        window = df.iloc[i-len_lookback:i]
-
-        # Split buckets - Bullish vs Bearish like GainzAlgo does
-        bull = window[window['is_green']==1]
-        bear = window[window['is_green']==0]
-        if len(bull)<10 or len(bear)<10:
-            probs.append(0.5)
-            continue
-
-        m1_f1, v1_f1 = bull['feat1'].mean(), bull['feat1'].var()
-        m1_f2, v1_f2 = bull['feat2'].mean(), bull['feat2'].var()
-        m0_f1, v0_f1 = bear['feat1'].mean(), bear['feat1'].var()
-        m0_f2, v0_f2 = bear['feat2'].mean(), bear['feat2'].var()
-
-        p1 = len(bull) / len_lookback
-
-        feat1_cur = df['feat1'].iloc[i]
-        feat2_cur = df['feat2'].iloc[i]
-
-        l1 = f_pdf(feat1_cur, m1_f1, v1_f1) * f_pdf(feat2_cur, m1_f2, v1_f2) * p1
-        l0 = f_pdf(feat1_cur, m0_f1, v0_f1) * f_pdf(feat2_cur, m0_f2, v0_f2) * (1-p1)
-
-        prob = l1 / (l1 + l0 + 0.000001)
-        probs.append(prob)
-
-    df['GAINZ_PROB'] = probs
-    df['GAINZ_SIGNAL'] = np.where(df['GAINZ_PROB'] > 0.60, 1, np.where(df['GAINZ_PROB'] < 0.40, -1, 0))
+        if i<100: probs.append(0.5); continue
+        win=df.iloc[i-100:i]
+        bull=win[win['is_green']==1]; bear=win[win['is_green']==0]
+        if len(bull)<10 or len(bear)<10: probs.append(0.5); continue
+        m1_f1,v1_f1=bull['f1'].mean(),bull['f1'].var()
+        m1_f2,v1_f2=bull['f2'].mean(),bull['f2'].var()
+        m0_f1,v0_f1=bear['f1'].mean(),bear['f1'].var()
+        m0_f2,v0_f2=bear['f2'].mean(),bear['f2'].var()
+        p1=len(bull)/100
+        l1=f_pdf(df['f1'].iloc[i],m1_f1,v1_f1)*f_pdf(df['f2'].iloc[i],m1_f2,v1_f2)*p1
+        l0=f_pdf(df['f1'].iloc[i],m0_f1,v0_f1)*f_pdf(df['f2'].iloc[i],m0_f2,v0_f2)*(1-p1)
+        probs.append(l1/(l1+l0+0.000001))
+    df['PROB']=probs
+    df['SIGNAL']=np.where(df['PROB']>0.60,1,np.where(df['PROB']<0.40,-1,0))
     return df
 
-# Download
-data = yf.download(stock, period="1y", interval="1d")
-if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
+# --- DATA ---
+data = yf.download(stock, period=period_map[timeframe], interval=interval_map[timeframe])
+if isinstance(data.columns, pd.MultiIndex): data.columns=data.columns.get_level_values(0)
+if data.empty: st.error("No data"); st.stop()
+data = gainzalgo(data)
 
-data = gainzalgo_v2_alfa(data)
+# Indicators
+data['EMA20']=data['Close'].ewm(span=20).mean()
+data['EMA50']=data['Close'].ewm(span=50).mean()
+data['EMA200']=data['Close'].ewm(span=200).mean()
+# RSI
+delta=data['Close'].diff()
+gain=(delta.where(delta>0,0)).rolling(14).mean()
+loss=(-delta.where(delta<0,0)).rolling(14).mean()
+data['RSI']=100-(100/(1+gain/loss))
+
+# --- MAIN CANDLE CHART (Like Zerodha Kite) ---
+fig = go.Figure(data=[go.Candlestick(
+    x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'],
+    name="Candles"
+)])
+
+if show_ema:
+    fig.add_trace(go.Scatter(x=data.index, y=data['EMA20'], name="EMA 20", line=dict(color='yellow', width=1)))
+    fig.add_trace(go.Scatter(x=data.index, y=data['EMA50'], name="EMA 50", line=dict(color='orange', width=1)))
+    fig.add_trace(go.Scatter(x=data.index, y=data['EMA200'], name="EMA 200", line=dict(color='red', width=1.5)))
+
+if show_gainz:
+    buys = data[data['SIGNAL']==1]
+    sells = data[data['SIGNAL']==-1]
+    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.99, mode='markers', name='BUY', marker=dict(symbol='triangle-up', size=15, color='green'), text=[f"BUY {p*100:.0f}%" for p in buys['PROB']]))
+    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.01, mode='markers', name='SELL', marker=dict(symbol='triangle-down', size=15, color='red'), text=[f"SELL" for p in sells['PROB']]))
+
+fig.update_layout(
+    title=f"{stock} - {timeframe} Chart with GAINZALGO Signals",
+    xaxis_rangeslider_visible=False,
+    height=600,
+    dragmode='zoom',
+    hovermode='x unified',
+    template='plotly_dark' # Like Zerodha dark mode
+)
+fig.update_xaxes(showspikes=True)
+fig.update_yaxes(showspikes=True)
+
+st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+
+# --- RSI Panel ---
+if show_rsi:
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=data.index, y=data['RSI'], name="RSI"))
+    fig2.add_hline(y=70, line_dash="dash", line_color="red")
+    fig2.add_hline(y=30, line_dash="dash", line_color="green")
+    fig2.update_layout(height=250, title="RSI (30 Oversold / 70 Overbought)", template='plotly_dark')
+    st.plotly_chart(fig2, use_container_width=True)
+
+# --- REAL TRADINGVIEW WIDGET (100% TradingView Experience) ---
+st.subheader("🔥 Real TradingView Chart - Full Tools (Drawing, Indicators)")
+symbol = stock.replace(".NS","")
+tv_widget = f"""
+<div class="tradingview-widget-container">
+  <div id="tradingview_abc"></div>
+  <script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget(
+  {{
+  "autosize": true,
+  "symbol": "NSE:{symbol}",
+  "interval": "{'D' if timeframe=='1d' else timeframe}",
+  "timezone": "Asia/Kolkata",
+  "theme": "dark",
+  "style": "1",
+  "locale": "in",
+  "toolbar_bg": "#f1f3f6",
+  "enable_publishing": false,
+  "allow_symbol_change": true,
+  "container_id": "tradingview_abc"
+}});
+  </script>
+</div>
+"""
+components.html(tv_widget, height=600)
+
 last = data.iloc[-1]
-prob_pct = last['GAINZ_PROB'] * 100
-
-# --- DISPLAY ---
-c1,c2,c3 = st.columns(3)
-c1.metric("Stock", stock, f"₹{last['Close']:.2f}")
-c2.metric("GAINZALGO Probability", f"{prob_pct:.1f}%", "BULLISH" if prob_pct>60 else "BEARISH" if prob_pct<40 else "NEUTRAL")
-if last['GAINZ_SIGNAL']==1:
-    c3.metric("Signal", "✅ BUY", f"{prob_pct:.0f}% Win Prob")
-elif last['GAINZ_SIGNAL']==-1:
-    c3.metric("Signal", "❌ SELL", f"{100-prob_pct:.0f}% Win Prob")
-else:
-    c3.metric("Signal", "WAIT")
-
-# Heatmap like TradingView (20 layers)
-st.subheader("🔥 GAINZALGO Heatmap (Power Index)")
-# Simulate 20 probability layers like original
-st.line_chart(data[['GAINZ_PROB']].tail(100))
-
-# Candle + Signal
-st.subheader("Chart with GAINZALGO Buy/Sell")
-# Add markers
-buy = data[data['GAINZ_SIGNAL']==1]['Close']
-sell = data[data['GAINZ_SIGNAL']==-1]['Close']
-chart_df = pd.DataFrame({'Close': data['Close'].tail(150), 'BUY': buy.tail(150), 'SELL': sell.tail(150)})
-st.line_chart(chart_df)
-
-st.write(f"**Candle Study:** Last candle {'Bullish' if last['Close']>last['Open'] else 'Bearish'} | Volume Intensity: {last['feat2']:.2f}x")
-
-# For convenience of BUY/SELL
-if prob_pct > 70 and last['Close'] > data['Close'].rolling(20).mean().iloc[-1]:
-    st.success(f"🟢 HIGH CONVICTION BUY - {prob_pct:.0f}% probability aligns with bullish reversal (like TradingView)")
-elif prob_pct < 30:
-    st.error(f"🔴 HIGH CONVICTION SELL - {100-prob_pct:.0f}% bearish probability")
-else:
-    st.warning("⚠️ Low confluence - WAIT")
-
-st.dataframe(data.tail(20))
+st.info(f"Last Signal: {'✅ BUY - ' + str(round(last['PROB']*100,1)) + '% Win Prob' if last['SIGNAL']==1 else '❌ SELL' if last['SIGNAL']==-1 else 'WAIT'} | Candle: {'Bullish' if last['Close']>last['Open'] else 'Bearish'} | Time: {last.name}")
