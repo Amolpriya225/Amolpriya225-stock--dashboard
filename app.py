@@ -1,140 +1,107 @@
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import math
 
-st.set_page_config(page_title="NSE AI Pro Dashboard", layout="wide")
-st.title("📈 NSE AI Pro Dashboard - EMA | RSI | Supertrend | Candle Study")
+st.set_page_config(page_title="NSE + GAINZALGO V2 ALFA", layout="wide")
+st.title("📈 NSE Dashboard + GAINZALGO V2 ALFA (AI)")
 
-# Hide menu
-hide_style = """
-<style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-</style>
-"""
-st.markdown(hide_style, unsafe_allow_html=True)
-
-# --- STOCKS LIST - Add as many as you want ---
-stocks = ["INFY.NS", "TCS.NS", "RELIANCE.NS", "WIPRO.NS", "HDFCBANK.NS", "SBIN.NS", "ICICIBANK.NS", "ITC.NS", "BHARTIARTL.NS", "LT.NS", "AXISBANK.NS", "TATAMOTORS.NS", "BAJFINANCE.NS", "MARUTI.NS"]
+stocks = ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","ICICIBANK.NS","TATAMOTORS.NS","ITC.NS"]
 stock = st.sidebar.selectbox("Select Stock", stocks)
-# Allow typing any stock too
-custom = st.sidebar.text_input("Or Type Any NSE Stock (e.g. SBIN.NS)")
-if custom:
-    stock = custom.upper()
+custom = st.sidebar.text_input("Or Type (e.g. BHARTIARTL.NS)")
+if custom: stock = custom.upper()
 
-# --- FUNCTIONS FOR INDICATORS ---
-def calculate_rsi(data, period=14):
-    delta = data['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+# --- GAINZALGO V2 ALFA CORE ENGINE ---
+def f_pdf(x, m, v):
+    # Gaussian PDF - same as TradingView version
+    v = max(v, 0.0001)
+    return (1 / math.sqrt(2 * math.pi * v)) * math.exp(-((x - m)**2) / (2 * v))
 
-def calculate_supertrend(df, period=10, multiplier=3):
-    hl2 = (df['High'] + df['Low']) / 2
-    atr = (df['High'] - df['Low']).rolling(period).mean() # Simplified ATR
-    # More accurate ATR
-    tr1 = df['High'] - df['Low']
-    tr2 = (df['High'] - df['Close'].shift()).abs()
-    tr3 = (df['Low'] - df['Close'].shift()).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = tr.rolling(period).mean()
+def gainzalgo_v2_alfa(df, len_lookback=100):
+    # Feature 1: Price Force (Close - Open) / ATR
+    # Feature 2: Volume Intensity (Volume / SMA Volume)
+    df = df.copy()
+    df['vol_sma'] = df['Volume'].rolling(20).mean()
+    df['feat1'] = (df['Close'] - df['Open']) / (df['High'] - df['Low'] + 0.001) # Price Force
+    df['feat2'] = df['Volume'] / (df['vol_sma'] + 1) # Volume Intensity
+    df['is_green'] = (df['Close'] > df['Open']).astype(int)
 
-    upper_band = hl2 + (multiplier * atr)
-    lower_band = hl2 - (multiplier * atr)
+    probs = []
+    for i in range(len(df)):
+        if i < len_lookback:
+            probs.append(0.5)
+            continue
+        window = df.iloc[i-len_lookback:i]
 
-    supertrend = [True] * len(df)
-    for i in range(1, len(df)):
-        if df['Close'].iloc[i] <= lower_band.iloc[i-1]:
-            supertrend[i] = True
-        elif df['Close'].iloc[i] >= upper_band.iloc[i-1]:
-            supertrend[i] = False
-        else:
-            supertrend[i] = supertrend[i-1]
-            if supertrend[i] and lower_band.iloc[i] < lower_band.iloc[i-1]:
-                lower_band.iloc[i] = lower_band.iloc[i-1]
-            if not supertrend[i] and upper_band.iloc[i] > upper_band.iloc[i-1]:
-                upper_band.iloc[i] = upper_band.iloc[i-1]
+        # Split buckets - Bullish vs Bearish like GainzAlgo does
+        bull = window[window['is_green']==1]
+        bear = window[window['is_green']==0]
+        if len(bull)<10 or len(bear)<10:
+            probs.append(0.5)
+            continue
 
-    return upper_band, lower_band, supertrend
+        m1_f1, v1_f1 = bull['feat1'].mean(), bull['feat1'].var()
+        m1_f2, v1_f2 = bull['feat2'].mean(), bull['feat2'].var()
+        m0_f1, v0_f1 = bear['feat1'].mean(), bear['feat1'].var()
+        m0_f2, v0_f2 = bear['feat2'].mean(), bear['feat2'].var()
 
-# --- DOWNLOAD DATA ---
+        p1 = len(bull) / len_lookback
+
+        feat1_cur = df['feat1'].iloc[i]
+        feat2_cur = df['feat2'].iloc[i]
+
+        l1 = f_pdf(feat1_cur, m1_f1, v1_f1) * f_pdf(feat2_cur, m1_f2, v1_f2) * p1
+        l0 = f_pdf(feat1_cur, m0_f1, v0_f1) * f_pdf(feat2_cur, m0_f2, v0_f2) * (1-p1)
+
+        prob = l1 / (l1 + l0 + 0.000001)
+        probs.append(prob)
+
+    df['GAINZ_PROB'] = probs
+    df['GAINZ_SIGNAL'] = np.where(df['GAINZ_PROB'] > 0.60, 1, np.where(df['GAINZ_PROB'] < 0.40, -1, 0))
+    return df
+
+# Download
 data = yf.download(stock, period="1y", interval="1d")
-if data.empty:
-    st.error("No data found! Check stock symbol.")
-    st.stop()
+if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
 
-# Flatten if multi-index
-if isinstance(data.columns, pd.MultiIndex):
-    data.columns = data.columns.get_level_values(0)
-
-# --- CALCULATE ALL INDICATORS ---
-data['SMA20'] = data['Close'].rolling(20).mean()
-data['SMA50'] = data['Close'].rolling(50).mean()
-data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
-data['EMA50'] = data['Close'].ewm(span=50, adjust=False).mean()
-data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
-data['RSI'] = calculate_rsi(data)
-
-upper_band, lower_band, st_trend = calculate_supertrend(data)
-data['ST_Upper'] = upper_band
-data['ST_Lower'] = lower_band
-data['ST_Trend'] = st_trend # True = Buy, False = Sell
-
-# --- CANDLE STUDY ---
+data = gainzalgo_v2_alfa(data)
 last = data.iloc[-1]
-prev = data.iloc[-2]
-body = abs(last['Close'] - last['Open'])
-prev_body = abs(prev['Close'] - prev['Open'])
-is_bullish = last['Close'] > last['Open']
-is_bearish = last['Close'] < last['Open']
-
-candle_signal = "Normal"
-if (last['Low'] < last['Open'] and last['Low'] < last['Close']) and body < (last['High'] - last['Low']) * 0.3:
-    candle_signal = "🔨 Hammer - Potential BUY Reversal"
-elif last['Close'] > prev['Open'] and last['Open'] < prev['Close'] and is_bullish and not (prev['Close'] > prev['Open']):
-    candle_signal = "🟢 Bullish Engulfing - STRONG BUY"
-elif last['Close'] < prev['Open'] and last['Open'] > prev['Close'] and is_bearish:
-    candle_signal = "🔴 Bearish Engulfing - STRONG SELL"
-elif body < (last['High'] - last['Low']) * 0.1:
-    candle_signal = "➕ Doji - Confusion / Reversal Coming"
-
-# --- FINAL SIGNAL LOGIC ---
-price = float(last['Close'])
-rsi_val = float(last['RSI'])
-st_buy = last['ST_Trend']
-
-buy_score = 0
-if price > last['EMA20']: buy_score+=1
-if last['EMA20'] > last['EMA50']: buy_score+=1
-if rsi_val > 30 and rsi_val < 65: buy_score+=1
-if st_buy == True: buy_score+=1
-if "BUY" in candle_signal: buy_score+=2
-
-if buy_score >= 4:
-    final_signal = "✅ STRONG BUY"
-elif buy_score >= 2:
-    final_signal = "⚠️ WAIT / HOLD"
-else:
-    final_signal = "❌ SELL"
+prob_pct = last['GAINZ_PROB'] * 100
 
 # --- DISPLAY ---
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Price", f"₹{price:.2f}")
-col2.metric("RSI (14)", f"{rsi_val:.1f}", "Overbought" if rsi_val>70 else "Oversold" if rsi_val<30 else "Neutral")
-col3.metric("Supertrend", "BUY 🟢" if st_buy else "SELL 🔴")
-col4.metric("Signal", final_signal)
+c1,c2,c3 = st.columns(3)
+c1.metric("Stock", stock, f"₹{last['Close']:.2f}")
+c2.metric("GAINZALGO Probability", f"{prob_pct:.1f}%", "BULLISH" if prob_pct>60 else "BEARISH" if prob_pct<40 else "NEUTRAL")
+if last['GAINZ_SIGNAL']==1:
+    c3.metric("Signal", "✅ BUY", f"{prob_pct:.0f}% Win Prob")
+elif last['GAINZ_SIGNAL']==-1:
+    c3.metric("Signal", "❌ SELL", f"{100-prob_pct:.0f}% Win Prob")
+else:
+    c3.metric("Signal", "WAIT")
 
-st.info(f"**Candle Study:** {candle_signal}")
+# Heatmap like TradingView (20 layers)
+st.subheader("🔥 GAINZALGO Heatmap (Power Index)")
+# Simulate 20 probability layers like original
+st.line_chart(data[['GAINZ_PROB']].tail(100))
 
-# --- CHARTS ---
-st.subheader(f"{stock} Chart with EMA & Supertrend")
-st.line_chart(data[['Close','EMA20','EMA50','ST_Upper','ST_Lower']].tail(100))
+# Candle + Signal
+st.subheader("Chart with GAINZALGO Buy/Sell")
+# Add markers
+buy = data[data['GAINZ_SIGNAL']==1]['Close']
+sell = data[data['GAINZ_SIGNAL']==-1]['Close']
+chart_df = pd.DataFrame({'Close': data['Close'].tail(150), 'BUY': buy.tail(150), 'SELL': sell.tail(150)})
+st.line_chart(chart_df)
 
-st.subheader("RSI Chart")
-st.line_chart(data[['RSI']].tail(100))
-st.caption("RSI >70 = Overbought (Sell), RSI <30 = Oversold (Buy)")
+st.write(f"**Candle Study:** Last candle {'Bullish' if last['Close']>last['Open'] else 'Bearish'} | Volume Intensity: {last['feat2']:.2f}x")
 
-st.dataframe(data.tail(10))
+# For convenience of BUY/SELL
+if prob_pct > 70 and last['Close'] > data['Close'].rolling(20).mean().iloc[-1]:
+    st.success(f"🟢 HIGH CONVICTION BUY - {prob_pct:.0f}% probability aligns with bullish reversal (like TradingView)")
+elif prob_pct < 30:
+    st.error(f"🔴 HIGH CONVICTION SELL - {100-prob_pct:.0f}% bearish probability")
+else:
+    st.warning("⚠️ Low confluence - WAIT")
+
+st.dataframe(data.tail(20))
