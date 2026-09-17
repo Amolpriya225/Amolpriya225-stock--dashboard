@@ -6,24 +6,27 @@ import numpy as np
 import math
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Zerodha Style Chart", layout="wide")
-st.title("📊 NSE + GAINZALGO V2 ALFA - Pro Chart")
+st.set_page_config(page_title="Pro Trading Chart", layout="wide")
+st.title("📈 GAINZALGO V2 ALFA - TradingView + SL/Target")
 
-# --- SETTINGS ---
-st.sidebar.header("⚙️ Chart Settings")
-stock = st.sidebar.selectbox("Stock", ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","TATAMOTORS.NS","ICICIBANK.NS","ITC.NS","BHARTIARTL.NS","LT.NS"])
-custom = st.sidebar.text_input("Or Type Stock")
-if custom: stock = custom.upper()
+# --- TIME FRAME SELECTOR LIKE ZERODHA ---
+col1, col2, col3 = st.columns([2,1,2])
+with col1:
+    stock = st.selectbox("Stock", ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","TATAMOTORS.NS","ICICIBANK.NS","ITC.NS"], index=0)
+    custom = st.text_input("Type NSE Stock (e.g. WIPRO.NS)")
+    if custom: stock = custom.upper()
+with col2:
+    timeframe = st.select_slider("Time Frame", options=["5m","15m","30m","1h","1d","1wk"], value="1h")
+with col3:
+    rr_ratio = st.selectbox("Target Ratio", ["1:1.5","1:2","1:3"], index=1)
 
-timeframe = st.sidebar.selectbox("Time", ["5m","15m","30m","1h","1d","1wk"], index=4)
 period_map = {"5m":"5d","15m":"1mo","30m":"1mo","1h":"3mo","1d":"1y","1wk":"2y"}
 interval_map = {"5m":"5m","15m":"15m","30m":"30m","1h":"60m","1d":"1d","1wk":"1wk"}
 
-# --- GAINZALGO ENGINE ---
+# --- GAINZALGO ---
 def f_pdf(x,m,v):
     v=max(v,0.0001)
     return (1 / math.sqrt(2*math.pi*v)) * math.exp(-((x-m)**2)/(2*v))
-
 def gainzalgo(df):
     df=df.copy()
     df['vol_sma']=df['Volume'].rolling(20).mean()
@@ -36,66 +39,84 @@ def gainzalgo(df):
         win=df.iloc[i-100:i]
         bull=win[win['is_green']==1]; bear=win[win['is_green']==0]
         if len(bull)<10 or len(bear)<10: probs.append(0.5); continue
-        m1_f1,v1_f1=bull['f1'].mean(),bull['f1'].var()
-        m1_f2,v1_f2=bull['f2'].mean(),bull['f2'].var()
-        m0_f1,v0_f1=bear['f1'].mean(),bear['f1'].var()
-        m0_f2,v0_f2=bear['f2'].mean(),bear['f2'].var()
-        p1=len(bull)/100
-        l1=f_pdf(df['f1'].iloc[i],m1_f1,v1_f1)*f_pdf(df['f2'].iloc[i],m1_f2,v1_f2)*p1
-        l0=f_pdf(df['f1'].iloc[i],m0_f1,v0_f1)*f_pdf(df['f2'].iloc[i],m0_f2,v0_f2)*(1-p1)
-        probs.append(l1/(l1+l0+0.000001))
+        l1=f_pdf(df['f1'].iloc[i],bull['f1'].mean(),bull['f1'].var())*f_pdf(df['f2'].iloc[i],bull['f2'].mean(),bull['f2'].var())*(len(bull)/100)
+        l0=f_pdf(df['f1'].iloc[i],bear['f1'].mean(),bear['f1'].var())*f_pdf(df['f2'].iloc[i],bear['f2'].mean(),bear['f2'].var())*(len(bear)/100)
+        probs.append(l1/(l1+l0+1e-6))
     df['PROB']=probs
-    df['SIGNAL']=np.where(df['PROB']>0.60,1,np.where(df['PROB']<0.40,-1,0))
+    df['SIGNAL']=np.where(df['PROB']>0.62,1,np.where(df['PROB']<0.38,-1,0))
     return df
 
 data = yf.download(stock, period=period_map[timeframe], interval=interval_map[timeframe])
 if isinstance(data.columns, pd.MultiIndex): data.columns=data.columns.get_level_values(0)
+if data.empty: st.error("No Data"); st.stop()
 data = gainzalgo(data)
 
+# ATR for SL/Target
+data['H-L'] = data['High'] - data['Low']
+data['ATR'] = data['H-L'].rolling(14).mean()
 data['EMA20']=data['Close'].ewm(span=20).mean()
-data['EMA50']=data['Close'].ewm(span=50).mean()
 
-# --- CHART WITH VERTICAL + HORIZONTAL ZOOM ---
-fig = go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Candle")])
-fig.add_trace(go.Scatter(x=data.index, y=data['EMA20'], name="EMA20", line=dict(color='yellow', width=1)))
-fig.add_trace(go.Scatter(x=data.index, y=data['EMA50'], name="EMA50", line=dict(color='orange', width=1)))
+# --- MAIN CHART WITH DARK GREEN/RED + SL/TARGET ---
+fig = go.Figure()
 
-buys = data[data['SIGNAL']==1]
-sells = data[data['SIGNAL']==-1]
-fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.99, mode='markers', name='BUY', marker=dict(symbol='triangle-up', size=15, color='#00FF00')))
-fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.01, mode='markers', name='SELL', marker=dict(symbol='triangle-down', size=15, color='red')))
+# CANDLE WITH DARK GREEN AND RED - ZERODHA STYLE
+fig.add_trace(go.Candlestick(
+    x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'],
+    increasing_line_color='#00b386', increasing_fillcolor='#00b386', # Dark Green
+    decreasing_line_color='#ff3c3c', decreasing_fillcolor='#ff3c3c', # Red
+    name="Candle"
+))
 
-# THIS IS THE FIX FOR ZOOM
+fig.add_trace(go.Scatter(x=data.index, y=data['EMA20'], name="EMA20", line=dict(color='yellow', width=1, dash='dot')))
+
+# --- BUY/SELL + SL + TARGET LINES ---
+rr = float(rr_ratio.split(":")[1])
+trades = []
+for idx in data[data['SIGNAL']!=0].index[-20:]: # last 20 signals
+    row = data.loc[idx]
+    entry = row['Close']
+    atr = row['ATR'] if not np.isnan(row['ATR']) else entry*0.01
+    if row['SIGNAL']==1: # BUY
+        sl = entry - atr*1.5
+        target = entry + (entry-sl)*rr
+        color_sl = 'red'
+        color_tg = 'green'
+        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[sl, sl], mode='lines', line=dict(color='red', width=2, dash='dash'), name=f"SL {sl:.2f}"))
+        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[target, target], mode='lines', line=dict(color='#00FF00', width=2, dash='dash'), name=f"Target {target:.2f}"))
+        fig.add_annotation(x=idx, y=row['Low']*0.98, text=f"BUY<br>{row['PROB']*100:.0f}%", showarrow=True, arrowhead=2, bgcolor="green", font=dict(color="white"))
+        trades.append(["BUY", idx.strftime("%d %H:%M"), f"{entry:.2f}", f"{sl:.2f}", f"{target:.2f}", f"{row['PROB']*100:.0f}%"])
+    else: # SELL
+        sl = entry + atr*1.5
+        target = entry - (sl-entry)*rr
+        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[sl, sl], mode='lines', line=dict(color='red', width=2, dash='dash'), name=f"SL {sl:.2f}"))
+        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[target, target], mode='lines', line=dict(color='#00FF00', width=2, dash='dash'), name=f"Target {target:.2f}"))
+        fig.add_annotation(x=idx, y=row['High']*1.02, text=f"SELL", showarrow=True, arrowhead=2, bgcolor="red", font=dict(color="white"))
+        trades.append(["SELL", idx.strftime("%d %H:%M"), f"{entry:.2f}", f"{sl:.2f}", f"{target:.2f}", f"{row['PROB']*100:.0f}%"])
+
 fig.update_layout(
-    title=f"{stock} - {timeframe}",
-    xaxis_rangeslider_visible=False,
-    height=700,
-    dragmode='zoom',
-    hovermode='x unified',
-    template='plotly_dark',
-    xaxis=dict(fixedrange=False),
-    yaxis=dict(fixedrange=False)
+    title=f"{stock} - {timeframe} - Dark Green/Red Candle + SL/Target",
+    xaxis_rangeslider_visible=False, height=750, dragmode='zoom',
+    hovermode='x unified', template='plotly_dark',
+    xaxis=dict(fixedrange=False), yaxis=dict(fixedrange=False)
 )
-fig.update_xaxes(showspikes=True)
-fig.update_yaxes(showspikes=True)
 
 st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'doubleClick': 'reset'})
 
-st.caption("HOW TO ZOOM: Mouse Wheel = Zoom | Drag Mouse = Box Zoom | Double Click = Reset | Right side drag = Vertical Zoom | Bottom drag = Horizontal Zoom")
+# --- TRADE CONFIRMATION TABLE ---
+st.subheader("✅ Trade Confirmation - GAINZALGO V2")
+if trades:
+    df_trades = pd.DataFrame(trades, columns=["Signal","Time","Entry","Stop Loss","Target", "Win Prob"])
+    df_trades = df_trades.tail(5).iloc[::-1] # last 5
+    st.table(df_trades)
 
-# --- REAL TRADINGVIEW ---
-st.subheader("Real TradingView Full Chart")
-symbol = stock.replace(".NS","")
-tv_widget = f"""
-<div class="tradingview-widget-container">
-  <div id="tradingview_abc" style="height:600px;"></div>
-  <script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget({{"autosize": true, "symbol": "NSE:{symbol}", "interval": "60", "timezone": "Asia/Kolkata", "theme": "dark", "style": "1", "locale": "in", "container_id": "tradingview_abc"}});
-  </script>
-</div>
-"""
-components.html(tv_widget, height=600)
+    last = data.iloc[-1]
+    if last['SIGNAL']==1:
+        st.success(f"🟢 CONFIRMED BUY @ {last['Close']:.2f} | SL: {last['Close']-last['ATR']*1.5:.2f} | TARGET: {last['Close']+(last['ATR']*1.5*rr):.2f} | Time: {timeframe}")
+    elif last['SIGNAL']==-1:
+        st.error(f"🔴 CONFIRMED SELL @ {last['Close']:.2f} | SL: {last['Close']+last['ATR']*1.5:.2f} | TARGET: {last['Close']-(last['ATR']*1.5*rr):.2f} | Time: {timeframe}")
+    else:
+        st.warning(f"🟡 WAIT - No Signal now. Probability: {last['PROB']*100:.1f}%")
+else:
+    st.info("No signals in this timeframe, try 5m or 15m")
 
-last = data.iloc[-1]
-st.success(f"Last: {stock} @ {last['Close']:.2f} | GAINZ Prob: {last['PROB']*100:.1f}% | Signal: {'BUY' if last['SIGNAL']==1 else 'SELL' if last['SIGNAL']==-1 else 'WAIT'}")
+st.caption("Zoom: Mouse Wheel | Drag = Box Zoom | Double Click = Reset | Right edge drag = Vertical | Bottom edge = Horizontal")
