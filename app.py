@@ -7,24 +7,19 @@ import math
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Zerodha Style Chart", layout="wide")
-st.title("📊 Zerodha / TradingView Style Chart - NSE")
+st.title("📊 NSE + GAINZALGO V2 ALFA - Pro Chart")
 
-# --- SIDEBAR SETTINGS (Like TradingView right click -> Settings) ---
+# --- SETTINGS ---
 st.sidebar.header("⚙️ Chart Settings")
 stock = st.sidebar.selectbox("Stock", ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","TATAMOTORS.NS","ICICIBANK.NS","ITC.NS","BHARTIARTL.NS","LT.NS"])
 custom = st.sidebar.text_input("Or Type Stock")
 if custom: stock = custom.upper()
 
-timeframe = st.sidebar.selectbox("Time Variation", ["1m","5m","15m","30m","1h","1d","1wk"], index=5)
-period_map = {"1m":"2d","5m":"5d","15m":"1mo","30m":"1mo","1h":"3mo","1d":"1y","1wk":"2y"}
-interval_map = {"1m":"1m","5m":"5m","15m":"15m","30m":"30m","1h":"60m","1d":"1d","1wk":"1wk"}
+timeframe = st.sidebar.selectbox("Time", ["5m","15m","30m","1h","1d","1wk"], index=4)
+period_map = {"5m":"5d","15m":"1mo","30m":"1mo","1h":"3mo","1d":"1y","1wk":"2y"}
+interval_map = {"5m":"5m","15m":"15m","30m":"30m","1h":"60m","1d":"1d","1wk":"1wk"}
 
-show_ema = st.sidebar.checkbox("Show EMA 20/50/200", True)
-show_supertrend = st.sidebar.checkbox("Show Supertrend", True)
-show_rsi = st.sidebar.checkbox("Show RSI Panel", True)
-show_gainz = st.sidebar.checkbox("Show GAINZALGO V2 BUY/SELL", True)
-
-# --- GAINZALGO ENGINE (from before) ---
+# --- GAINZALGO ENGINE ---
 def f_pdf(x,m,v):
     v=max(v,0.0001)
     return (1 / math.sqrt(2*math.pi*v)) * math.exp(-((x-m)**2)/(2*v))
@@ -53,87 +48,54 @@ def gainzalgo(df):
     df['SIGNAL']=np.where(df['PROB']>0.60,1,np.where(df['PROB']<0.40,-1,0))
     return df
 
-# --- DATA ---
 data = yf.download(stock, period=period_map[timeframe], interval=interval_map[timeframe])
 if isinstance(data.columns, pd.MultiIndex): data.columns=data.columns.get_level_values(0)
-if data.empty: st.error("No data"); st.stop()
 data = gainzalgo(data)
 
-# Indicators
 data['EMA20']=data['Close'].ewm(span=20).mean()
 data['EMA50']=data['Close'].ewm(span=50).mean()
-data['EMA200']=data['Close'].ewm(span=200).mean()
-# RSI
-delta=data['Close'].diff()
-gain=(delta.where(delta>0,0)).rolling(14).mean()
-loss=(-delta.where(delta<0,0)).rolling(14).mean()
-data['RSI']=100-(100/(1+gain/loss))
 
-# --- MAIN CANDLE CHART (Like Zerodha Kite) ---
-fig = go.Figure(data=[go.Candlestick(
-    x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'],
-    name="Candles"
-)])
+# --- CHART WITH VERTICAL + HORIZONTAL ZOOM ---
+fig = go.Figure(data=[go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="Candle")])
+fig.add_trace(go.Scatter(x=data.index, y=data['EMA20'], name="EMA20", line=dict(color='yellow', width=1)))
+fig.add_trace(go.Scatter(x=data.index, y=data['EMA50'], name="EMA50", line=dict(color='orange', width=1)))
 
-if show_ema:
-    fig.add_trace(go.Scatter(x=data.index, y=data['EMA20'], name="EMA 20", line=dict(color='yellow', width=1)))
-    fig.add_trace(go.Scatter(x=data.index, y=data['EMA50'], name="EMA 50", line=dict(color='orange', width=1)))
-    fig.add_trace(go.Scatter(x=data.index, y=data['EMA200'], name="EMA 200", line=dict(color='red', width=1.5)))
+buys = data[data['SIGNAL']==1]
+sells = data[data['SIGNAL']==-1]
+fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.99, mode='markers', name='BUY', marker=dict(symbol='triangle-up', size=15, color='#00FF00')))
+fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.01, mode='markers', name='SELL', marker=dict(symbol='triangle-down', size=15, color='red')))
 
-if show_gainz:
-    buys = data[data['SIGNAL']==1]
-    sells = data[data['SIGNAL']==-1]
-    fig.add_trace(go.Scatter(x=buys.index, y=buys['Low']*0.99, mode='markers', name='BUY', marker=dict(symbol='triangle-up', size=15, color='green'), text=[f"BUY {p*100:.0f}%" for p in buys['PROB']]))
-    fig.add_trace(go.Scatter(x=sells.index, y=sells['High']*1.01, mode='markers', name='SELL', marker=dict(symbol='triangle-down', size=15, color='red'), text=[f"SELL" for p in sells['PROB']]))
-
+# THIS IS THE FIX FOR ZOOM
 fig.update_layout(
-    title=f"{stock} - {timeframe} Chart with GAINZALGO Signals",
+    title=f"{stock} - {timeframe}",
     xaxis_rangeslider_visible=False,
-    height=600,
+    height=700,
     dragmode='zoom',
     hovermode='x unified',
-    template='plotly_dark' # Like Zerodha dark mode
+    template='plotly_dark',
+    xaxis=dict(fixedrange=False),
+    yaxis=dict(fixedrange=False)
 )
 fig.update_xaxes(showspikes=True)
 fig.update_yaxes(showspikes=True)
 
-st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'doubleClick': 'reset'})
 
-# --- RSI Panel ---
-if show_rsi:
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=data.index, y=data['RSI'], name="RSI"))
-    fig2.add_hline(y=70, line_dash="dash", line_color="red")
-    fig2.add_hline(y=30, line_dash="dash", line_color="green")
-    fig2.update_layout(height=250, title="RSI (30 Oversold / 70 Overbought)", template='plotly_dark')
-    st.plotly_chart(fig2, use_container_width=True)
+st.caption("HOW TO ZOOM: Mouse Wheel = Zoom | Drag Mouse = Box Zoom | Double Click = Reset | Right side drag = Vertical Zoom | Bottom drag = Horizontal Zoom")
 
-# --- REAL TRADINGVIEW WIDGET (100% TradingView Experience) ---
-st.subheader("🔥 Real TradingView Chart - Full Tools (Drawing, Indicators)")
+# --- REAL TRADINGVIEW ---
+st.subheader("Real TradingView Full Chart")
 symbol = stock.replace(".NS","")
 tv_widget = f"""
 <div class="tradingview-widget-container">
-  <div id="tradingview_abc"></div>
+  <div id="tradingview_abc" style="height:600px;"></div>
   <script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
   <script type="text/javascript">
-  new TradingView.widget(
-  {{
-  "autosize": true,
-  "symbol": "NSE:{symbol}",
-  "interval": "{'D' if timeframe=='1d' else timeframe}",
-  "timezone": "Asia/Kolkata",
-  "theme": "dark",
-  "style": "1",
-  "locale": "in",
-  "toolbar_bg": "#f1f3f6",
-  "enable_publishing": false,
-  "allow_symbol_change": true,
-  "container_id": "tradingview_abc"
-}});
+  new TradingView.widget({{"autosize": true, "symbol": "NSE:{symbol}", "interval": "60", "timezone": "Asia/Kolkata", "theme": "dark", "style": "1", "locale": "in", "container_id": "tradingview_abc"}});
   </script>
 </div>
 """
 components.html(tv_widget, height=600)
 
 last = data.iloc[-1]
-st.info(f"Last Signal: {'✅ BUY - ' + str(round(last['PROB']*100,1)) + '% Win Prob' if last['SIGNAL']==1 else '❌ SELL' if last['SIGNAL']==-1 else 'WAIT'} | Candle: {'Bullish' if last['Close']>last['Open'] else 'Bearish'} | Time: {last.name}")
+st.success(f"Last: {stock} @ {last['Close']:.2f} | GAINZ Prob: {last['PROB']*100:.1f}% | Signal: {'BUY' if last['SIGNAL']==1 else 'SELL' if last['SIGNAL']==-1 else 'WAIT'}")
