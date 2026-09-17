@@ -4,119 +4,132 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 import math
-import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Pro Trading Chart", layout="wide")
-st.title("📈 GAINZALGO V2 ALFA - TradingView + SL/Target")
+st.set_page_config(page_title="Heikin Ashi Pro", layout="wide")
+st.title("🕯️ Heikin Ashi + GAINZALGO V2 - Zerodha Style")
 
-# --- TIME FRAME SELECTOR LIKE ZERODHA ---
-col1, col2, col3 = st.columns([2,1,2])
-with col1:
-    stock = st.selectbox("Stock", ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","TATAMOTORS.NS","ICICIBANK.NS","ITC.NS"], index=0)
-    custom = st.text_input("Type NSE Stock (e.g. WIPRO.NS)")
+# --- CONTROLS ---
+c1,c2,c3,c4 = st.columns(4)
+with c1:
+    stock = st.selectbox("Stock", ["INFY.NS","TCS.NS","RELIANCE.NS","HDFCBANK.NS","SBIN.NS","TATAMOTORS.NS"])
+    custom = st.text_input("Custom (e.g. WIPRO.NS)")
     if custom: stock = custom.upper()
-with col2:
+with c2:
     timeframe = st.select_slider("Time Frame", options=["5m","15m","30m","1h","1d","1wk"], value="1h")
-with col3:
-    rr_ratio = st.selectbox("Target Ratio", ["1:1.5","1:2","1:3"], index=1)
+with c3:
+    candle_type = st.selectbox("Candle Type", ["Normal Candle", "Heikin Ashi"], index=1)
+with c4:
+    rr_ratio = st.selectbox("Risk:Reward", ["1:2","1:3"], index=0)
 
 period_map = {"5m":"5d","15m":"1mo","30m":"1mo","1h":"3mo","1d":"1y","1wk":"2y"}
 interval_map = {"5m":"5m","15m":"15m","30m":"30m","1h":"60m","1d":"1d","1wk":"1wk"}
 
-# --- GAINZALGO ---
+# --- DATA ---
+data = yf.download(stock, period=period_map[timeframe], interval=interval_map[timeframe])
+if isinstance(data.columns, pd.MultiIndex): data.columns=data.columns.get_level_values(0)
+data = data.reset_index()
+if 'Date' in data.columns: data.rename(columns={'Date':'Datetime'}, inplace=True)
+if 'Datetime' not in data.columns: data.rename(columns={'index':'Datetime'}, inplace=True)
+
+# --- HEIKIN ASHI FORMULA ---
+def heikin_ashi(df):
+    ha = df.copy()
+    ha['HA_Close'] = (df['Open']+df['High']+df['Low']+df['Close'])/4
+    ha_open = [(df['Open'][0]+df['Close'][0])/2]
+    for i in range(1, len(df)):
+        ha_open.append((ha_open[i-1] + ha['HA_Close'][i-1])/2)
+    ha['HA_Open'] = ha_open
+    ha['HA_High'] = ha[['High','HA_Open','HA_Close']].max(axis=1)
+    ha['HA_Low'] = ha[['Low','HA_Open','HA_Close']].min(axis=1)
+    return ha
+
+ha_data = heikin_ashi(data)
+
+# --- GAINZALGO ON NORMAL DATA FOR SIGNAL ---
 def f_pdf(x,m,v):
     v=max(v,0.0001)
     return (1 / math.sqrt(2*math.pi*v)) * math.exp(-((x-m)**2)/(2*v))
-def gainzalgo(df):
-    df=df.copy()
-    df['vol_sma']=df['Volume'].rolling(20).mean()
-    df['f1']=(df['Close']-df['Open'])/(df['High']-df['Low']+0.001)
-    df['f2']=df['Volume']/(df['vol_sma']+1)
-    df['is_green']=(df['Close']>df['Open']).astype(int)
-    probs=[]
-    for i in range(len(df)):
-        if i<100: probs.append(0.5); continue
-        win=df.iloc[i-100:i]
-        bull=win[win['is_green']==1]; bear=win[win['is_green']==0]
-        if len(bull)<10 or len(bear)<10: probs.append(0.5); continue
-        l1=f_pdf(df['f1'].iloc[i],bull['f1'].mean(),bull['f1'].var())*f_pdf(df['f2'].iloc[i],bull['f2'].mean(),bull['f2'].var())*(len(bull)/100)
-        l0=f_pdf(df['f1'].iloc[i],bear['f1'].mean(),bear['f1'].var())*f_pdf(df['f2'].iloc[i],bear['f2'].mean(),bear['f2'].var())*(len(bear)/100)
-        probs.append(l1/(l1+l0+1e-6))
-    df['PROB']=probs
-    df['SIGNAL']=np.where(df['PROB']>0.62,1,np.where(df['PROB']<0.38,-1,0))
-    return df
 
-data = yf.download(stock, period=period_map[timeframe], interval=interval_map[timeframe])
-if isinstance(data.columns, pd.MultiIndex): data.columns=data.columns.get_level_values(0)
-if data.empty: st.error("No Data"); st.stop()
-data = gainzalgo(data)
+df_sig = data.copy()
+df_sig['vol_sma']=df_sig['Volume'].rolling(20).mean()
+df_sig['f1']=(df_sig['Close']-df_sig['Open'])/(df_sig['High']-df_sig['Low']+0.001)
+df_sig['f2']=df_sig['Volume']/(df_sig['vol_sma']+1)
+df_sig['is_green']=(df_sig['Close']>df_sig['Open']).astype(int)
+probs=[]
+for i in range(len(df_sig)):
+    if i<100: probs.append(0.5); continue
+    win=df_sig.iloc[i-100:i]
+    bull=win[win['is_green']==1]; bear=win[win['is_green']==0]
+    if len(bull)<10 or len(bear)<10: probs.append(0.5); continue
+    l1=f_pdf(df_sig['f1'].iloc[i],bull['f1'].mean(),bull['f1'].var())*f_pdf(df_sig['f2'].iloc[i],bull['f2'].mean(),bull['f2'].var())*(len(bull)/100)
+    l0=f_pdf(df_sig['f1'].iloc[i],bear['f1'].mean(),bear['f1'].var())*f_pdf(df_sig['f2'].iloc[i],bear['f2'].mean(),bear['f2'].var())*(len(bear)/100)
+    probs.append(l1/(l1+l0+1e-6))
+df_sig['PROB']=probs
+df_sig['SIGNAL']=np.where(df_sig['PROB']>0.62,1,np.where(df_sig['PROB']<0.38,-1,0))
+df_sig['ATR']=(df_sig['High']-df_sig['Low']).rolling(14).mean()
 
-# ATR for SL/Target
-data['H-L'] = data['High'] - data['Low']
-data['ATR'] = data['H-L'].rolling(14).mean()
-data['EMA20']=data['Close'].ewm(span=20).mean()
-
-# --- MAIN CHART WITH DARK GREEN/RED + SL/TARGET ---
+# --- PLOT ---
 fig = go.Figure()
 
-# CANDLE WITH DARK GREEN AND RED - ZERODHA STYLE
-fig.add_trace(go.Candlestick(
-    x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'],
-    increasing_line_color='#00b386', increasing_fillcolor='#00b386', # Dark Green
-    decreasing_line_color='#ff3c3c', decreasing_fillcolor='#ff3c3c', # Red
-    name="Candle"
-))
+if candle_type == "Heikin Ashi":
+    # HEIKIN ASHI - DARK GREEN / RED
+    fig.add_trace(go.Candlestick(
+        x=ha_data['Datetime'], open=ha_data['HA_Open'], high=ha_data['HA_High'], low=ha_data['HA_Low'], close=ha_data['HA_Close'],
+        increasing_line_color='#00b386', increasing_fillcolor='#00b386',
+        decreasing_line_color='#ff3c3c', decreasing_fillcolor='#ff3c3c',
+        name="Heikin Ashi"
+    ))
+    plot_close = ha_data['HA_Close']
+else:
+    fig.add_trace(go.Candlestick(
+        x=data['Datetime'], open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'],
+        increasing_line_color='#00b386', increasing_fillcolor='#00b386',
+        decreasing_line_color='#ff3c3c', decreasing_fillcolor='#ff3c3c',
+        name="Normal"
+    ))
+    plot_close = data['Close']
 
-fig.add_trace(go.Scatter(x=data.index, y=data['EMA20'], name="EMA20", line=dict(color='yellow', width=1, dash='dot')))
+# EMA
+fig.add_trace(go.Scatter(x=data['Datetime'], y=data['Close'].ewm(span=20).mean(), name="EMA20", line=dict(color='yellow', width=1)))
 
-# --- BUY/SELL + SL + TARGET LINES ---
+# BUY/SELL + SL/TARGET
 rr = float(rr_ratio.split(":")[1])
-trades = []
-for idx in data[data['SIGNAL']!=0].index[-20:]: # last 20 signals
-    row = data.loc[idx]
+last_signals = df_sig[df_sig['SIGNAL']!=0].tail(10)
+for i, row in last_signals.iterrows():
     entry = row['Close']
-    atr = row['ATR'] if not np.isnan(row['ATR']) else entry*0.01
-    if row['SIGNAL']==1: # BUY
+    atr = row['ATR'] if not np.isnan(row['ATR']) else entry*0.015
+    idx_time = row['Datetime']
+    if row['SIGNAL']==1:
         sl = entry - atr*1.5
-        target = entry + (entry-sl)*rr
-        color_sl = 'red'
-        color_tg = 'green'
-        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[sl, sl], mode='lines', line=dict(color='red', width=2, dash='dash'), name=f"SL {sl:.2f}"))
-        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[target, target], mode='lines', line=dict(color='#00FF00', width=2, dash='dash'), name=f"Target {target:.2f}"))
-        fig.add_annotation(x=idx, y=row['Low']*0.98, text=f"BUY<br>{row['PROB']*100:.0f}%", showarrow=True, arrowhead=2, bgcolor="green", font=dict(color="white"))
-        trades.append(["BUY", idx.strftime("%d %H:%M"), f"{entry:.2f}", f"{sl:.2f}", f"{target:.2f}", f"{row['PROB']*100:.0f}%"])
-    else: # SELL
+        tg = entry + (entry-sl)*rr
+        fig.add_trace(go.Scatter(x=[idx_time, data['Datetime'].iloc[-1]], y=[sl, sl], line=dict(color='red', dash='dash'), name=f"SL {sl:.2f}"))
+        fig.add_trace(go.Scatter(x=[idx_time, data['Datetime'].iloc[-1]], y=[tg, tg], line=dict(color='#00ff00', dash='dash'), name=f"TARGET {tg:.2f}"))
+        fig.add_annotation(x=idx_time, y=sl, text=f"BUY {row['PROB']*100:.0f}%", showarrow=True, bgcolor="green")
+    else:
         sl = entry + atr*1.5
-        target = entry - (sl-entry)*rr
-        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[sl, sl], mode='lines', line=dict(color='red', width=2, dash='dash'), name=f"SL {sl:.2f}"))
-        fig.add_trace(go.Scatter(x=[idx, data.index[-1]], y=[target, target], mode='lines', line=dict(color='#00FF00', width=2, dash='dash'), name=f"Target {target:.2f}"))
-        fig.add_annotation(x=idx, y=row['High']*1.02, text=f"SELL", showarrow=True, arrowhead=2, bgcolor="red", font=dict(color="white"))
-        trades.append(["SELL", idx.strftime("%d %H:%M"), f"{entry:.2f}", f"{sl:.2f}", f"{target:.2f}", f"{row['PROB']*100:.0f}%"])
+        tg = entry - (sl-entry)*rr
+        fig.add_trace(go.Scatter(x=[idx_time, data['Datetime'].iloc[-1]], y=[sl, sl], line=dict(color='red', dash='dash'), name=f"SL {sl:.2f}"))
+        fig.add_trace(go.Scatter(x=[idx_time, data['Datetime'].iloc[-1]], y=[tg, tg], line=dict(color='#00ff00', dash='dash'), name=f"TARGET {tg:.2f}"))
+        fig.add_annotation(x=idx_time, y=sl, text=f"SELL", showarrow=True, bgcolor="red")
 
 fig.update_layout(
-    title=f"{stock} - {timeframe} - Dark Green/Red Candle + SL/Target",
+    title=f"{stock} - {candle_type} - {timeframe} | Dark Green/Red",
     xaxis_rangeslider_visible=False, height=750, dragmode='zoom',
-    hovermode='x unified', template='plotly_dark',
-    xaxis=dict(fixedrange=False), yaxis=dict(fixedrange=False)
+    template='plotly_dark', xaxis=dict(fixedrange=False), yaxis=dict(fixedrange=False)
 )
 
 st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'doubleClick': 'reset'})
 
-# --- TRADE CONFIRMATION TABLE ---
-st.subheader("✅ Trade Confirmation - GAINZALGO V2")
+# TRADE TABLE
+st.subheader("✅ Trade Confirmation (Heikin Ashi + GAINZ)")
+trades=[]
+for i,row in last_signals.tail(5).iterrows():
+    entry=row['Close']; atr=row['ATR'] if not np.isnan(row['ATR']) else entry*0.015
+    sl = entry-atr*1.5 if row['SIGNAL']==1 else entry+atr*1.5
+    tg = entry+(entry-sl)*rr if row['SIGNAL']==1 else entry-(sl-entry)*rr
+    trades.append([ "BUY" if row['SIGNAL']==1 else "SELL", row['Datetime'].strftime("%d-%m %H:%M"), f"{entry:.2f}", f"{sl:.2f}", f"{tg:.2f}", f"{row['PROB']*100:.0f}%" ])
+
 if trades:
-    df_trades = pd.DataFrame(trades, columns=["Signal","Time","Entry","Stop Loss","Target", "Win Prob"])
-    df_trades = df_trades.tail(5).iloc[::-1] # last 5
-    st.table(df_trades)
+    st.table(pd.DataFrame(trades, columns=["Signal","Time","Entry","Stop Loss","Target","Prob"])[::-1])
 
-    last = data.iloc[-1]
-    if last['SIGNAL']==1:
-        st.success(f"🟢 CONFIRMED BUY @ {last['Close']:.2f} | SL: {last['Close']-last['ATR']*1.5:.2f} | TARGET: {last['Close']+(last['ATR']*1.5*rr):.2f} | Time: {timeframe}")
-    elif last['SIGNAL']==-1:
-        st.error(f"🔴 CONFIRMED SELL @ {last['Close']:.2f} | SL: {last['Close']+last['ATR']*1.5:.2f} | TARGET: {last['Close']-(last['ATR']*1.5*rr):.2f} | Time: {timeframe}")
-    else:
-        st.warning(f"🟡 WAIT - No Signal now. Probability: {last['PROB']*100:.1f}%")
-else:
-    st.info("No signals in this timeframe, try 5m or 15m")
-
-st.caption("Zoom: Mouse Wheel | Drag = Box Zoom | Double Click = Reset | Right edge drag = Vertical | Bottom edge = Horizontal")
+st.caption("Heikin Ashi = Trend clear hota hai. Green = Buy trend, Red = Sell trend. GAINZ signal SL/Target ke saath.")
