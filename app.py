@@ -163,9 +163,24 @@ fig.add_shape(type="line", x0=x_data.iloc[-40], x1=x_data.iloc[-1], y0=t1, y1=t1
 fig.add_shape(type="line", x0=x_data.iloc[-40], x1=x_data.iloc[-1], y0=t2, y1=t2, line=dict(color="darkgreen", width=1, dash="dash"))
 fig.add_shape(type="line", x0=x_data.iloc[-40], x1=x_data.iloc[-1], y0=entry_price, y1=entry_price, line=dict(color="black", width=1))
 
-fig.update_layout(height=580, template='plotly_white', xaxis=dict(rangeslider=dict(visible=True, thickness=0.08)), yaxis=dict(side="right"), margin=dict(l=10,r=10,t=10,b=10), showlegend=True, legend=dict(orientation="h", y=1.02))
-st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+# STEP 7: CHART - Friendly Scroll
+fig.update_layout(
+    height=550,
+    margin=dict(l=10, r=10, t=10, b=10),
+    xaxis=dict(
+        rangeslider=dict(visible=False), # neeche ka slider hataya - scroll easy hoga
+        fixedrange=False
+    ),
+    yaxis=dict(fixedrange=False),
+    dragmode=False, # <--- Ye sabse important hai, verticle scroll block nahi karega
+    hovermode='x unified'
+)
 
+st.plotly_chart(fig, use_container_width=True, config={
+    'scrollZoom': False,  # <--- mouse se zoom band
+    'displayModeBar': False, # <--- upar ka toolbar hataya
+    'doubleClick': False
+})
 # STEP 8: METRICS - ALL ASKED PARAMETERS
 col1,col2,col3,col4,col5,col6,col7 = st.columns(7)
 col1.metric("Entry Price", f"{entry_price:.2f}")
