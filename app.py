@@ -142,24 +142,15 @@ import streamlit.components.v1 as components
 
 st.subheader("Live Chart")
 
-tradingview_code = """
-<div id="tradingview_chart" style="height:600px;"></div>
-<script src="https://s.tradingview.com/tv.js"></script>
-<script>
-new TradingView.widget({
-  "autosize": true,
-  "symbol": "NSE:NIFTY",
-  "interval": "30",
-  "timezone": "Asia/Kolkata",
-  "theme": "dark",
-  "style": "1",
-  "locale": "in",
-  "allow_symbol_change": true
-});
-</script>
-"""
+d# STEP 7: FINAL CHART - ZERODHA LIKE - NO ERROR VERSION
+import streamlit.components.v1 as components
 
-components.html(tradingview_code, height=620)
+st.subheader("Live Chart")
+
+components.html(
+    '<div id="tv" style="height:600px;"></div><script src="https://s.tradingview.com/tv.js"></script><script>new TradingView.widget({"autosize": true, "symbol": "NSE:NIFTY", "interval": "30", "timezone": "Asia/Kolkata", "theme": "dark", "style": "1", "locale": "in", "allow_symbol_change": true});</script>',
+    height=620
+)
 # STEP 8: METRICS - ALL ASKED PARAMETERS
 col1,col2,col3,col4,col5,col6,col7 = st.columns(7)
 col1.metric("Entry Price", f"{entry_price:.2f}")
