@@ -146,7 +146,7 @@ setInterval(function(){{
 # STEP 7: CHART - TRADINGVIEW / ZERODHA LIKE - FINAL
 import streamlit.components.v1 as components
 
-st.subheader(f"{symbol} Live Chart")
+st.subheader(f"Live Chart")
 
 # TradingView symbol ko NSE format me badlo
 tv_symbol = f"NSE:{symbol}" if symbol != "NIFTY" else "NSE:NIFTY"
