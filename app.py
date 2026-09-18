@@ -118,44 +118,60 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# STEP 7: CHART - FINAL GUARANTEED WORKING - TRADINGVIEW ADVANCED
-st.subheader("Live Chart - TradingView")
+# STEP 7: CHART - DUAL - ALWAYS WORKING - NO PAID ISSUE
+st.subheader("Live Chart - TradingView + Zerodha Style")
 
-# Symbol mapping
-if selected == "NIFTY":
-    tv_sym = "NSE:NIFTY"
-elif selected == "BANKNIFTY":
-    tv_sym = "NSE:BANKNIFTY"
-elif selected == "SENSEX":
-    tv_sym = "BSE:SENSEX"
-else:
-    tv_sym = f"NSE:{selected}"
+tab1, tab2 = st.tabs(["📈 Our Live Chart (Always Works)", "🌐 TradingView"])
 
-tv_interval_map = {"5m":"5", "15m":"15", "30m":"30", "1h":"60", "1d":"D"}
-tv_int = tv_interval_map.get(timeframe, "30")
+with tab1:
+    # Zerodha-like Plotly chart from our yfinance data
+    fig = go.Figure()
+    if candle_type == "Heikin Ashi":
+        fig.add_trace(go.Candlestick(x=ha['Datetime'], open=ha['HA_Open'], high=ha['HA_High'], low=ha['HA_Low'], close=ha['HA_Close'], name="Heikin Ashi"))
+    else:
+        fig.add_trace(go.Candlestick(x=df['Datetime'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Normal"))
+    
+    fig.add_trace(go.Scatter(x=df['Datetime'], y=df['EMA20'], line=dict(color='orange', width=1), name='EMA20'))
+    fig.add_trace(go.Scatter(x=df['Datetime'], y=df['SuperTrend'], line=dict(color='cyan', width=1), name='SuperTrend'))
+    fig.add_trace(go.Scatter(x=df['Datetime'], y=df['VWAP'], line=dict(color='yellow', width=1, dash='dot'), name='VWAP'))
+    
+    fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10,r=10,t=10,b=10))
+    st.plotly_chart(fig, use_container_width=True)
 
-chart_html = f"""
-<div class="tradingview-widget-container" style="height:650px; width:100%;">
-  <div id="tradingview_adv" style="height:650px; width:100%;"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget({{
-    "autosize": true,
-    "symbol": "{tv_sym}",
-    "interval": "{tv_int}",
-    "timezone": "Asia/Kolkata",
-    "theme": "dark",
-    "style": "1",
-    "locale": "in",
-    "toolbar_bg": "#f1f3f6",
-    "enable_publishing": false,
-    "allow_symbol_change": true,
-    "container_id": "tradingview_adv"
-  }});
-  </script>
-</div>
-"""
-components.html(chart_html, height=660)# STEP 8: METRICS
+with tab2:
+    # TradingView - stocks ke liye best hai, NIFTY pe paid error aa sakta hai
+    if selected == "NIFTY": tv_sym = "NSE:NIFTY"
+    elif selected == "BANKNIFTY": tv_sym = "NSE:BANKNIFTY"
+    elif selected == "SENSEX": tv_sym = "BSE:SENSEX"
+    else: tv_sym = f"NSE:{selected}"
+    
+    tv_interval_map = {"5m":"5", "15m":"15", "30m":"30", "1h":"60", "1d":"D"}
+    tv_int = tv_interval_map.get(timeframe, "30")
+
+    chart_html = f"""
+    <div class="tradingview-widget-container" style="height:600px; width:100%;">
+      <div id="tradingview_adv" style="height:600px; width:100%;"></div>
+      <script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+      new TradingView.widget({{
+        "autosize": true,
+        "symbol": "{tv_sym}",
+        "interval": "{tv_int}",
+        "timezone": "Asia/Kolkata",
+        "theme": "dark",
+        "style": "1",
+        "locale": "in",
+        "enable_publishing": false,
+        "allow_symbol_change": true,
+        "container_id": "tradingview_adv"
+      }});
+      </script>
+    </div>
+    """
+    components.html(chart_html, height=610)
+    if selected in ["NIFTY","BANKNIFTY","SENSEX"]:
+        st.caption("Note: NSE intraday data is paid on TradingView, so Tab 1 (Our Live Chart) use karo NIFTY/BANKNIFTY ke liye. Stocks ke liye Tab 2 best hai.")
+# STEP 8: METRICS
 col1,col2,col3,col4,col5,col6,col7 = st.columns(7)
 col1.metric("Entry Price", f"{entry_price:.2f}")
 col2.metric("Target 1", f"{t1:.2f}")
