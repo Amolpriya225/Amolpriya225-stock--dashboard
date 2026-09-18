@@ -142,32 +142,32 @@ setInterval(function(){{
 }}, 200);
 </script>
 """, height=35)
-
-# STEP 7: CHART - TRADINGVIEW / ZERODHA LIKE - FINAL
+# STEP 7: CHART - TRADINGVIEW LIKE - 100% WORKING
 import streamlit.components.v1 as components
 
-st.subheader(f"Live Chart")
+st.subheader("Live Chart")
 
-# TradingView symbol ko NSE format me badlo
-tv_symbol = f"NSE:{symbol}" if symbol != "NIFTY" else "NSE:NIFTY"
-
-tradingview_html = f"""
-<div style="height:600px;">
-  <div id="tradingview_widget" style="height:100%; width:100%;"></div>
+components.html("""
+<div style="height:650px;">
+  <div id="tradingview_123" style="height:100%; width:100%;"></div>
   <script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
   <script type="text/javascript">
-  new TradingView.widget({{
+  new TradingView.widget({
     "autosize": true,
-    "symbol": "{tv_symbol}",
+    "symbol": "NSE:NIFTY",
     "interval": "30",
     "timezone": "Asia/Kolkata",
     "theme": "dark",
     "style": "1",
     "locale": "in",
     "enable_publishing": false,
-    "allow_symbol_change": false,
+    "allow_symbol_change": true,
     "hide_top_toolbar": false,
-    "hide_legend": false,
+    "save_image": false
+  });
+  </script>
+</div>
+""", height=660)
     "save_image": true,
     "calendar": false,
     "hide_volume": false,
