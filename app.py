@@ -118,37 +118,44 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# STEP 7: CHART - ZERODHA / TRADINGVIEW LIKE - 100% SCROLL FRIENDLY
+# STEP 7: CHART - FINAL GUARANTEED WORKING - TRADINGVIEW ADVANCED
 st.subheader("Live Chart - TradingView")
 
-# Dynamic symbol for TradingView
-if selected in ["NIFTY","BANKNIFTY","SENSEX"]:
-    tv_symbol = f"NSE:{selected}"
+# Symbol mapping
+if selected == "NIFTY":
+    tv_sym = "NSE:NIFTY"
+elif selected == "BANKNIFTY":
+    tv_sym = "NSE:BANKNIFTY"
+elif selected == "SENSEX":
+    tv_sym = "BSE:SENSEX"
 else:
-    tv_symbol = f"NSE:{selected}"
+    tv_sym = f"NSE:{selected}"
 
-tv_code = f"""
-<div id="tv_chart" style="height:620px;"></div>
-<script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
-<script type="text/javascript">
-new TradingView.widget({{
-  "autosize": true,
-  "symbol": "{tv_symbol}",
-  "interval": "30",
-  "timezone": "Asia/Kolkata",
-  "theme": "dark",
-  "style": "1",
-  "locale": "in",
-  "enable_publishing": false,
-  "allow_symbol_change": true,
-  "hide_top_toolbar": false,
-  "save_image": false,
-  "calendar": false
-}});
-</script>
+tv_interval_map = {"5m":"5", "15m":"15", "30m":"30", "1h":"60", "1d":"D"}
+tv_int = tv_interval_map.get(timeframe, "30")
+
+chart_html = f"""
+<div class="tradingview-widget-container" style="height:650px; width:100%;">
+  <div id="tradingview_adv" style="height:650px; width:100%;"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget({{
+    "autosize": true,
+    "symbol": "{tv_sym}",
+    "interval": "{tv_int}",
+    "timezone": "Asia/Kolkata",
+    "theme": "dark",
+    "style": "1",
+    "locale": "in",
+    "toolbar_bg": "#f1f3f6",
+    "enable_publishing": false,
+    "allow_symbol_change": true,
+    "container_id": "tradingview_adv"
+  }});
+  </script>
+</div>
 """
-components.html(tv_code, height=630)
-
+components.html(chart_html, height=660)
 # STEP 8: METRICS
 col1,col2,col3,col4,col5,col6,col7 = st.columns(7)
 col1.metric("Entry Price", f"{entry_price:.2f}")
