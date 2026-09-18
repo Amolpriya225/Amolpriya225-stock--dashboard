@@ -11,7 +11,7 @@ from datetime import datetime
 st.set_page_config(page_title="ZERODHA FINAL - ALL PARAMETERS", layout="wide")
 
 # STEP 1: LIVE TICK EVERY 1 SEC
-st_autorefresh(interval=5000, key="final_live")
+st_autorefresh(interval=1000, key="final_live")
 
 # STEP 2: CONFIG
 NSE_STOCKS = ["NIFTY","BANKNIFTY","SENSEX","INFY","TCS","RELIANCE","HDFCBANK","ICICIBANK","SBIN"]
