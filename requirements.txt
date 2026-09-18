@@ -4,4 +4,3 @@ pandas
 numpy
 plotly
 streamlit-autorefresh
-streamlit-lightweight-charts
