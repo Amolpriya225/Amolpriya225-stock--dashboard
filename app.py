@@ -143,44 +143,31 @@ setInterval(function(){{
 </script>
 """, height=35)
 
-# STEP 7: CHART - ZERODHA STYLE
-fig=go.Figure()
-x_data = ha['Datetime'] if candle_type=="Heikin Ashi" else df['Datetime']
-o = ha['HA_Open'] if candle_type=="Heikin Ashi" else df['Open']
-h = ha['HA_High'] if candle_type=="Heikin Ashi" else df['High']
-l = ha['HA_Low'] if candle_type=="Heikin Ashi" else df['Low']
-c = ha['HA_Close'] if candle_type=="Heikin Ashi" else df['Close']
+# STEP 7: CHART - ZERODHA / TRADINGVIEW LIKE
+from lightweight_charts.widgets import StreamlitChart
 
-fig.add_trace(go.Candlestick(x=x_data, open=o, high=h, low=l, close=c, increasing_line_color='#26a69a', decreasing_line_color='#ef5350', name=candle_type))
-fig.add_trace(go.Scatter(x=x_data, y=df['EMA20'], line=dict(color='orange', width=1), name="EMA20"))
-fig.add_trace(go.Scatter(x=x_data, y=df['EMA50'], line=dict(color='blue', width=1), name="EMA50"))
-fig.add_trace(go.Scatter(x=x_data, y=df['VWAP'], line=dict(color='#ff9800', width=1.5, dash='dot'), name="VWAP"))
-fig.add_trace(go.Scatter(x=x_data, y=df['SuperTrend'], line=dict(color='purple', width=1, dash='dot'), name="SuperTrend"))
+st.subheader(f"{symbol} Live Chart - Zerodha Style")
 
-# Levels lines
-fig.add_shape(type="line", x0=x_data.iloc[-40], x1=x_data.iloc[-1], y0=sl, y1=sl, line=dict(color="red", width=1, dash="dash"))
-fig.add_shape(type="line", x0=x_data.iloc[-40], x1=x_data.iloc[-1], y0=t1, y1=t1, line=dict(color="green", width=1, dash="dash"))
-fig.add_shape(type="line", x0=x_data.iloc[-40], x1=x_data.iloc[-1], y0=t2, y1=t2, line=dict(color="darkgreen", width=1, dash="dash"))
-fig.add_shape(type="line", x0=x_data.iloc[-40], x1=x_data.iloc[-1], y0=entry_price, y1=entry_price, line=dict(color="black", width=1))
+# Data ko lightweight chart ke format me badlo
+chart_data = []
+for i, row in df.iterrows():
+    chart_data.append({
+        "time": row['Date'].strftime('%Y-%m-%d'),
+        "open": row['Open'],
+        "high": row['High'],
+        "low": row['Low'],
+        "close": row['Close'],
+        "volume": row['Volume']
+    })
 
-# STEP 7: CHART - Friendly Scroll
-fig.update_layout(
-    height=550,
-    margin=dict(l=10, r=10, t=10, b=10),
-    xaxis=dict(
-        rangeslider=dict(visible=False), # neeche ka slider hataya - scroll easy hoga
-        fixedrange=False
-    ),
-    yaxis=dict(fixedrange=False),
-    dragmode=False, # <--- Ye sabse important hai, verticle scroll block nahi karega
-    hovermode='x unified'
-)
+chart = StreamlitChart(width=900, height=600)
 
-st.plotly_chart(fig, use_container_width=True, config={
-    'scrollZoom': False,  # <--- mouse se zoom band
-    'displayModeBar': False, # <--- upar ka toolbar hataya
-    'doubleClick': False
-})
+chart.layout(background_color='#131722', text_color='#d1d4dc', grid_color='#2a2e39')
+chart.candle_style(up_color='#26a69a', down_color='#ef5350', wick_up_color='#26a69a', wick_down_color='#ef5350')
+chart.volume_config(up_color='#26a69a', down_color='#ef5350')
+
+chart.set(chart_data)
+chart.load()
 # STEP 8: METRICS - ALL ASKED PARAMETERS
 col1,col2,col3,col4,col5,col6,col7 = st.columns(7)
 col1.metric("Entry Price", f"{entry_price:.2f}")
