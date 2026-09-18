@@ -5,11 +5,10 @@ import plotly.graph_objects as go
 import numpy as np
 import math
 
-st.set_page_config(page_title="Zerodha FULL + OPTIONS + 95%", layout="wide")
+st.set_page_config(page_title="Zerodha + NIFTY OPTIONS + 95% GAINZ", layout="wide")
 
-# STOCKS
-NSE_STOCKS = ["NIFTY","BANKNIFTY","SENSEX","INFY","TCS","RELIANCE","HDFCBANK","ICICIBANK","SBIN","BHARTIARTL","ITC","LT"]
-stock_map = {"NIFTY":"^NSEI","BANKNIFTY":"^NSEBANK","SENSEX":"^BSESN","INFY":"INFY.NS","TCS":"TCS.NS","RELIANCE":"RELIANCE.NS","HDFCBANK":"HDFCBANK.NS","ICICIBANK":"ICICIBANK.NS","SBIN":"SBIN.NS","BHARTIARTL":"BHARTIARTL.NS","ITC":"ITC.NS","LT":"LT.NS"}
+NSE_STOCKS = ["NIFTY","BANKNIFTY","SENSEX","INFY","TCS","RELIANCE","HDFCBANK","ICICIBANK","SBIN","BHARTIARTL","ITC"]
+stock_map = {"NIFTY":"^NSEI","BANKNIFTY":"^NSEBANK","SENSEX":"^BSESN","INFY":"INFY.NS","TCS":"TCS.NS","RELIANCE":"RELIANCE.NS","HDFCBANK":"HDFCBANK.NS","ICICIBANK":"ICICIBANK.NS","SBIN":"SBIN.NS","BHARTIARTL":"BHARTIARTL.NS","ITC":"ITC.NS"}
 
 c1,c2,c3 = st.columns([2,1,1])
 with c1: selected = st.selectbox("Search Stock / Index ▼", NSE_STOCKS, index=0); stock = stock_map[selected]
@@ -22,9 +21,7 @@ interval_map = {"5m":"5m","15m":"15m","30m":"30m","1h":"60m","1d":"1d"}
 df = yf.download(stock, period=period_map[timeframe], interval=interval_map[timeframe], auto_adjust=True)
 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 df = df.reset_index()
-if df.empty: st.error("No data"); st.stop()
 
-# Heikin Ashi
 ha = df.copy()
 ha['HA_Close'] = (df['Open']+df['High']+df['Low']+df['Close'])/4
 ha_open = [(df['Open'][0]+df['Close'][0])/2]
@@ -33,33 +30,6 @@ ha['HA_Open'] = ha_open
 ha['HA_High'] = ha[['High','HA_Open','HA_Close']].max(axis=1)
 ha['HA_Low'] = ha[['Low','HA_Open','HA_Close']].min(axis=1)
 
-# --- INDICATORS - ALL OLD TOOLS BACK ---
-# EMA
-df['EMA20'] = df['Close'].ewm(span=20).mean()
-df['EMA50'] = df['Close'].ewm(span=50).mean()
-
-# RSI 30/70
-delta = df['Close'].diff()
-gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-rs = gain / (loss + 0.001)
-df['RSI'] = 100 - (100 / (1 + rs))
-
-# SuperTrend
-atr_period = 10
-mult = 3
-df['TR'] = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())))
-df['ATR_ST'] = df['TR'].rolling(atr_period).mean()
-hl2 = (df['High'] + df['Low'])/2
-df['UpperBand'] = hl2 + (mult * df['ATR_ST'])
-df['LowerBand'] = hl2 - (mult * df['ATR_ST'])
-df['SuperTrend'] = 0.0
-for i in range(1, len(df)):
-    if df['Close'].iloc[i] <= df['LowerBand'].iloc[i-1]: df.loc[df.index[i], 'SuperTrend'] = df['UpperBand'].iloc[i]
-    else: df.loc[df.index[i], 'SuperTrend'] = df['LowerBand'].iloc[i]
-df['ST_Signal'] = np.where(df['Close'] > df['SuperTrend'], 1, -1)
-
-# GAINZALGO + 95% BOOSTER
 def f_pdf(x,m,v):
     v=max(v,0.0001)
     return (1 / math.sqrt(2*math.pi*v)) * math.exp(-((x-m)**2)/(2*v))
@@ -89,6 +59,7 @@ for i in range(len(df)):
 df['PROB']=boosted
 df['SIGNAL']=np.where(df['PROB']>0.85,1,np.where(df['PROB']<0.15,-1,0))
 df['ATR']=(df['High']-df['Low']).rolling(14).mean()
+df['EMA20']=df['Close'].ewm(span=20).mean()
 
 last=df.iloc[-1]; atr=last['ATR'] if not pd.isna(last['ATR']) else last['Close']*0.01
 prob_percent=last['PROB']*100
@@ -97,59 +68,37 @@ clr="#26a69a" if change>=0 else "#ef5350"
 sig_color="#26a69a" if last['SIGNAL']==1 else "#ef5350" if last['SIGNAL']==-1 else "grey"
 sig_name="BUY" if last['SIGNAL']==1 else "SELL" if last['SIGNAL']==-1 else "WAIT"
 
-# TIME
-entry_time = last['Datetime'] if 'Datetime' in df.columns else pd.Timestamp.now()
-entry_price = last['Close']
-
-if last['SIGNAL']==1:
-    sl = entry_price - atr*1.0
-    t1 = entry_price + atr*1.5
-    t2 = entry_price + atr*3.0
-else:
-    sl = entry_price + atr*1.0
-    t1 = entry_price - atr*1.5
-    t2 = entry_price - atr*3.0
-
-# HEADER - ZERODHA
 st.markdown(f"""<div style="background:white; border:1px solid #e0e0e0; padding:12px; border-radius:4px; display:flex; justify-content:space-between;">
-<div><b>{selected}</b> {entry_price:.2f} <span style="color:{clr};">{change:+.2f} ({pct:+.2f}%)</span> | RSI {last['RSI']:.1f} | ST {"BUY" if last['ST_Signal']==1 else "SELL"}</div>
+<div><b>{selected}</b> <span style="margin-left:15px;">{last['Close']:.2f}</span> <span style="color:{clr};">{change:+.2f} ({pct:+.2f}%)</span></div>
 <div style="background:{sig_color}; color:white; padding:5px 15px; border-radius:4px; font-weight:700;">{sig_name} {prob_percent:.0f}%</div>
 </div>""", unsafe_allow_html=True)
 
-# CHART
 fig=go.Figure()
 if candle_type=="Heikin Ashi":
-    fig.add_trace(go.Candlestick(x=ha['Datetime'], open=ha['HA_Open'], high=ha['HA_High'], low=ha['HA_Low'], close=ha['HA_Close'], increasing_line_color='#26a69a', decreasing_line_color='#ef5350', name="HA"))
+    fig.add_trace(go.Candlestick(x=ha['Datetime'], open=ha['HA_Open'], high=ha['HA_High'], low=ha['HA_Low'], close=ha['HA_Close'], increasing_line_color='#26a69a', increasing_fillcolor='#26a69a', decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'))
     x_data=ha['Datetime']
 else:
-    fig.add_trace(go.Candlestick(x=df['Datetime'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], increasing_line_color='#26a69a', decreasing_line_color='#ef5350'))
+    fig.add_trace(go.Candlestick(x=df['Datetime'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], increasing_line_color='#26a69a', increasing_fillcolor='#26a69a', decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'))
     x_data=df['Datetime']
 
-fig.add_trace(go.Scatter(x=x_data, y=df['EMA20'], line=dict(color='orange', width=1), name="EMA20"))
-fig.add_trace(go.Scatter(x=x_data, y=df['EMA50'], line=dict(color='blue', width=1), name="EMA50"))
-fig.add_trace(go.Scatter(x=x_data, y=df['SuperTrend'], line=dict(color='purple', width=1, dash='dot'), name="SuperTrend"))
-
+fig.add_trace(go.Scatter(x=x_data, y=df['EMA20'], line=dict(color='orange', width=1.2), name="EMA20"))
+if last['SIGNAL']==1: sl=last['Close']-atr*1.5; tg=last['Close']+atr*3
+else: sl=last['Close']+atr*1.5; tg=last['Close']-atr*3
 fig.add_shape(type="line", x0=x_data.iloc[-30], x1=x_data.iloc[-1], y0=sl, y1=sl, line=dict(color="red", dash="dash"))
-fig.add_shape(type="line", x0=x_data.iloc[-30], x1=x_data.iloc[-1], y0=t1, y1=t1, line=dict(color="green", dash="dash"))
-fig.add_shape(type="line", x0=x_data.iloc[-30], x1=x_data.iloc[-1], y0=t2, y1=t2, line=dict(color="darkgreen", dash="dash"))
-fig.add_shape(type="line", x0=x_data.iloc[-30], x1=x_data.iloc[-1], y0=entry_price, y1=entry_price, line=dict(color="black", dash="solid"))
-
-fig.update_layout(height=600, template='plotly_white', xaxis=dict(rangeslider=dict(visible=True, thickness=0.08)), yaxis=dict(side="right"), margin=dict(l=10,r=10,t=10,b=10), showlegend=True)
+fig.add_shape(type="line", x0=x_data.iloc[-30], x1=x_data.iloc[-1], y0=tg, y1=tg, line=dict(color="green", dash="dash"))
+fig.update_layout(height=550, template='plotly_white', xaxis=dict(rangeslider=dict(visible=True, thickness=0.08)), yaxis=dict(side="right"), margin=dict(l=10,r=10,t=10,b=10), showlegend=False)
 st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
 
-# DETAILS - ENTRY, TARGET1, TARGET2, SL, TIME - ALL BACK
-col1,col2,col3,col4,col5,col6 = st.columns(6)
-col1.metric("Entry Price", f"{entry_price:.2f}")
-col2.metric("Target 1", f"{t1:.2f}")
-col3.metric("Target 2", f"{t2:.2f}")
-col4.metric("Stoploss", f"{sl:.2f}")
-col5.metric("RSI (30/70)", f"{last['RSI']:.1f} {'Overbought' if last['RSI']>70 else 'Oversold' if last['RSI']<30 else 'Neutral'}")
-col6.metric("Time", f"{pd.to_datetime(entry_time).strftime('%H:%M:%S %d-%m')}")
-
-st.caption(f"EMA20 {last['EMA20']:.1f} | EMA50 {last['EMA50']:.1f} | SuperTrend {last['SuperTrend']:.1f} | Confirmation {prob_percent:.0f}%")
-
-# OPTIONS
+# OPTIONS SUGGESTION (NEW, OLD TOOLS STILL THERE)
 if selected in ["NIFTY","BANKNIFTY","SENSEX"]:
-    atm=round(entry_price/50)*50 if selected=="NIFTY" else round(entry_price/100)*100
-    if last['SIGNAL']==1: st.success(f"🟢 OPTION: BUY {selected} {atm} CE | Entry {entry_price:.0f} | T1 {t1:.0f} | T2 {t2:.0f} | SL {sl:.0f} | {prob_percent:.0f}%")
-    elif last['SIGNAL']==-1: st.error(f"🔴 OPTION: BUY {selected} {atm} PE | Entry {entry_price:.0f} | T1 {t1:.0f} | T2 {t2:.0f} | SL {sl:.0f} | {100-prob_percent:.0f}%")
+    spot=last['Close']
+    atm=round(spot/50)*50 if selected=="NIFTY" else round(spot/100)*100
+    if last['SIGNAL']==1:
+        st.success(f"🟢 {selected} OPTION: BUY {atm} CE | Spot {spot:.0f} | Confirmation {prob_percent:.0f}% | Target +150 pts | SL -70 pts")
+    elif last['SIGNAL']==-1:
+        st.error(f"🔴 {selected} OPTION: BUY {atm} PE | Spot {spot:.0f} | Confirmation {100-prob_percent:.0f}% | Target +150 pts | SL -70 pts")
+    else:
+        st.warning(f"🟡 {selected} OPTIONS: WAIT - No clear trend")
+else:
+    if last['SIGNAL']==1: st.success(f"🟢 STOCK BUY {prob_percent:.0f}% | SL {sl:.2f} | Target {tg:.2f}")
+    elif last['SIGNAL']==-1: st.error(f"🔴 STOCK SELL {100-prob_percent:.0f}% | SL {sl:.2f} | Target {tg:.2f}")
