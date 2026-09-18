@@ -137,47 +137,29 @@ st.markdown(f"""
 components.html(f"""
 <div id="tick" style="text-align:center; font-family:monospace; color:#00ff00; background:#111; padding:4px;">LIVE TICK: {entry_time.strftime('%H:%M:%S')}</div>
 <script>
-setInterval(function(){{
-    document.getElementById('tick').innerHTML = "LIVE MICRO TICK: " + new Date().toLocaleTimeString() + "." + new Date().getMilliseconds() + " | {selected} {entry_price:.2f}";
-}}, 200);
-</script>
-""", height=35)
-# STEP 7: CHART - TRADINGVIEW LIKE - 100% WORKING
+# STEP 7: FINAL - TRADINGVIEW CHART - ZERODHA LIKE
 import streamlit.components.v1 as components
 
 st.subheader("Live Chart")
 
-components.html("""
-<div style="height:650px;">
-  <div id="tradingview_123" style="height:100%; width:100%;"></div>
-  <script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget({
-    "autosize": true,
-    "symbol": "NSE:NIFTY",
-    "interval": "30",
-    "timezone": "Asia/Kolkata",
-    "theme": "dark",
-    "style": "1",
-    "locale": "in",
-    "enable_publishing": false,
-    "allow_symbol_change": true,
-    "hide_top_toolbar": false,
-    "save_image": false
-  });
-  </script>
-</div>
-""", height=660)
-    "save_image": true,
-    "calendar": false,
-    "hide_volume": false,
-    "support_host": "https://www.tradingview.com"
-  }});
-  </script>
-</div>
+tradingview_code = """
+<div id="tradingview_chart" style="height:600px;"></div>
+<script src="https://s.tradingview.com/tv.js"></script>
+<script>
+new TradingView.widget({
+  "autosize": true,
+  "symbol": "NSE:NIFTY",
+  "interval": "30",
+  "timezone": "Asia/Kolkata",
+  "theme": "dark",
+  "style": "1",
+  "locale": "in",
+  "allow_symbol_change": true
+});
+</script>
 """
 
-components.html(tradingview_html, height=620)
+components.html(tradingview_code, height=620)
 # STEP 8: METRICS - ALL ASKED PARAMETERS
 col1,col2,col3,col4,col5,col6,col7 = st.columns(7)
 col1.metric("Entry Price", f"{entry_price:.2f}")
