@@ -143,31 +143,41 @@ setInterval(function(){{
 </script>
 """, height=35)
 
-# STEP 7: CHART - ZERODHA / TRADINGVIEW LIKE
-from lightweight_charts.widgets import StreamlitChart
+# STEP 7: CHART - TRADINGVIEW / ZERODHA LIKE - FINAL
+import streamlit.components.v1 as components
 
-st.subheader(f"{symbol} Live Chart - Zerodha Style")
+st.subheader(f"{symbol} Live Chart")
 
-# Data ko lightweight chart ke format me badlo
-chart_data = []
-for i, row in df.iterrows():
-    chart_data.append({
-        "time": row['Date'].strftime('%Y-%m-%d'),
-        "open": row['Open'],
-        "high": row['High'],
-        "low": row['Low'],
-        "close": row['Close'],
-        "volume": row['Volume']
-    })
+# TradingView symbol ko NSE format me badlo
+tv_symbol = f"NSE:{symbol}" if symbol != "NIFTY" else "NSE:NIFTY"
 
-chart = StreamlitChart(width=900, height=600)
+tradingview_html = f"""
+<div style="height:600px;">
+  <div id="tradingview_widget" style="height:100%; width:100%;"></div>
+  <script type="text/javascript" src="https://s.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget({{
+    "autosize": true,
+    "symbol": "{tv_symbol}",
+    "interval": "30",
+    "timezone": "Asia/Kolkata",
+    "theme": "dark",
+    "style": "1",
+    "locale": "in",
+    "enable_publishing": false,
+    "allow_symbol_change": false,
+    "hide_top_toolbar": false,
+    "hide_legend": false,
+    "save_image": true,
+    "calendar": false,
+    "hide_volume": false,
+    "support_host": "https://www.tradingview.com"
+  }});
+  </script>
+</div>
+"""
 
-chart.layout(background_color='#131722', text_color='#d1d4dc', grid_color='#2a2e39')
-chart.candle_style(up_color='#26a69a', down_color='#ef5350', wick_up_color='#26a69a', wick_down_color='#ef5350')
-chart.volume_config(up_color='#26a69a', down_color='#ef5350')
-
-chart.set(chart_data)
-chart.load()
+components.html(tradingview_html, height=620)
 # STEP 8: METRICS - ALL ASKED PARAMETERS
 col1,col2,col3,col4,col5,col6,col7 = st.columns(7)
 col1.metric("Entry Price", f"{entry_price:.2f}")
